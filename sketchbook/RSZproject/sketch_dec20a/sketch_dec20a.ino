@@ -32,6 +32,7 @@ const int i2c_addr = 0x3F;
 
 
 //Variables for Gyroscope
+long i = 0;
 int gyro_x, gyro_y, gyro_z;
 long gyro_x_cal, gyro_y_cal, gyro_z_cal;
 boolean set_gyro_angles;
@@ -56,7 +57,7 @@ void setup() {
 
   //Setup the registers of the MPU-6050
   setup_mpu_6050_registers();
-
+/*
   //Read the raw acc and gyro data from the MPU-6050 1000 times
   for (int cal_int = 0; cal_int < 1000 ; cal_int ++) {
     read_mpu_6050_data();
@@ -73,16 +74,22 @@ void setup() {
   acc_x_cal /= 1000;
   acc_y_cal /= 1000;
   acc_z_cal /= 1000;
-
+*/
   // Start Serial Monitor
   Serial.begin(115200);
 
   // Init Timer
   //loop_timer = micros();
+ 
 }
 
 void loop() {
 
+if(i < 100000){
+  i++;
+}
+else{
+  i = 0;
   // Get data from MPU-6050
   read_mpu_6050_data();
 
@@ -90,11 +97,11 @@ void loop() {
   acc_x -= acc_x_cal;
   acc_y -= acc_y_cal;
   acc_z -= acc_z_cal;
-
+ 
   Serial.print("x_acc \t");
   Serial.print(acc_z);
   Serial.print("\t");
-  
+}
   //Gyro angle calculations . Note 0.0000611 = 1 / (250Hz x 65.5)
 /*
   //Calculate the traveled pitch angle and add this to the angle_pitch variable
