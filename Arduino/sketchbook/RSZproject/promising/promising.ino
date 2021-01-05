@@ -81,8 +81,17 @@ void setup() {
     // initialize device
     //Serial.println("Initializing I2C devices...");
     accelgyro.initialize();
+
+    // NASTAVENI +-16 G ACCELEROMETR
     accelgyro.setFullScaleAccelRange(MPU6050_ACCEL_FS_16);
-    accelgyro.setDLPFMode(MPU6050_DLPF_BW_5);
+
+    // NASTAVENI +-250degrees/sec
+    accelgyro.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+
+    // TOHLE ZAKOMENTUJ POKUD NECHCES FILTRACI
+    accelgyro.setDLPFMode(MPU6050_DLPF_BW_10);
+
+    
     // verify connection
     //Serial.println("Testing device connections...");
    // Serial.println(accelgyro.testConnection() ? "MPU6050 connection successful" : "MPU6050 connection failed");
@@ -115,10 +124,10 @@ void setup() {
  
 void loop() {
     // read raw accel/gyro measurements from device
-    //accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
  
     // these methods (and a few others) are also available
-    accelgyro.getAcceleration(&ax, &ay, &az);
+    //accelgyro.getAcceleration(&ax, &ay, &az);
     //accelgyro.getRotation(&gx, &gy, &gz);
  /*
     #ifdef OUTPUT_READABLE_ACCELGYRO
@@ -137,7 +146,7 @@ void loop() {
           Serial.write((uint8_t)(ax >> 8)); Serial.write((uint8_t)(ax & 0xFF));
           Serial.write((uint8_t)(ay >> 8)); Serial.write((uint8_t)(ay & 0xFF));
           Serial.write((uint8_t)(az >> 8)); Serial.write((uint8_t)(az & 0xFF));
-          //Serial.write((uint8_t)(gx >> 8)); Serial.write((uint8_t)(gx & 0xFF));
-          //Serial.write((uint8_t)(gy >> 8)); Serial.write((uint8_t)(gy & 0xFF));
-          //Serial.write((uint8_t)(gz >> 8)); Serial.write((uint8_t)(gz & 0xFF));
+          Serial.write((uint8_t)(gx >> 8)); Serial.write((uint8_t)(gx & 0xFF));
+          Serial.write((uint8_t)(gy >> 8)); Serial.write((uint8_t)(gy & 0xFF));
+          Serial.write((uint8_t)(gz >> 8)); Serial.write((uint8_t)(gz & 0xFF));
 }
