@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import serial
 import time
 import timeit
-from scipy import signal, integrate
-from scipy.fft import rfft, rfftfreq
+from scipy import signal
+from directkeys import PressKey, ReleaseKey, E, SHIFT, L
 #----------------------------------------------------------------------------------------------------------------------------------
 # VARIABLES INIT
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -22,7 +22,7 @@ gyroscope_z_offset = -85
 
 # data comms variables
 baud_rate = 115200
-buffer_length = 100
+buffer_length = 150
 number_of_bytes = 7
 button_state = 0
 
@@ -38,6 +38,8 @@ sample_index = 0
 from_ADC_g_to_metres = accelerometer_scale*9.81/32768
 from_ADc_deg_to_deg = gyroscope_scale/32768
 dt = 1/sample_rate
+key_delay_in_s = 0.01 # delay between key press and key release
+charge_pressed = 0
 
 #----------------------------------------------------------------------------------------------------------------------------------
 # LOADING TEMPLATES
@@ -179,9 +181,9 @@ def process_sample_buffer():
     # A_full_z.extend(A[:,2])
 
 def compare():
-    global sample_index, button_state
+    global sample_index, button_state, charge_pressed, ability
     # compare the input signal with pre-recorded gestures
-    # subtract the signals from each other, then compare the error values
+    # subtract the signals from each other, abs(), then compare the error values
     # the one with MIN ERROR value is the wanted gesture
     charge_error = sum(abs(charge[:,0] - A[:,0])) + sum(abs(charge[:,1] - A[:,1])) + sum(abs(charge[:,2] - A[:,2]))
     punch_error = sum(abs(punch[:,0] - A[:,0])) + sum(abs(punch[:,1] - A[:,1])) + sum(abs(punch[:,2] - A[:,2]))
@@ -189,22 +191,53 @@ def compare():
     uppercut_error = sum(abs(uppercut[:,0] - A[:,0])) + sum(abs(uppercut[:,1] - A[:,1])) + sum(abs(uppercut[:,2] - A[:,2]))
 
     ability = np.argmin([charge_error, punch_error, slam_error, uppercut_error])
-    print("Charge =", charge_error, "Punch =", punch_error, "Slam =", slam_error, "Uppercut =", uppercut_error)
+    #print("Charge =", charge_error, "Punch =", punch_error, "Slam =", slam_error, "Uppercut =", uppercut_error)
 
-    # zero out the sample index
-    sample_index = 0
-
-    # zero out the button_state
-    button_state = 0
+def keyboard_input():
+    global charge_pressed
 
     if ability == 0:
-        print("Charge it is")
-    if ability == 1:
-        print("Punch it is")
-    if ability == 2:
-        print("Slam it is")  
-    if ability == 3:
-        print("Uppercut it is")
+        #print("Charge it is")
+
+        if(charge_pressed == 1):
+            ReleaseKey(L)
+            time.sleep(key_delay_in_s)
+            charge_pressed = 0
+
+        PressKey(L)
+        time.sleep(key_delay_in_s)
+        charge_pressed = 1 # indicator to reset the key later
+
+    elif ability == 1:
+        #print("Punch it is")
+        ReleaseKey(L)
+        time.sleep(key_delay_in_s)
+
+    elif ability == 2:
+        #print("Slam it is")
+
+        if(charge_pressed == 1):
+            ReleaseKey(L)
+            time.sleep(key_delay_in_s)
+            charge_pressed = 0
+
+        PressKey(E)
+        time.sleep(key_delay_in_s)
+        ReleaseKey(E)
+        time.sleep(key_delay_in_s)
+        
+    elif ability == 3:
+        #print("Uppercut it is")
+
+        if(charge_pressed == 1):
+            ReleaseKey(L)
+            time.sleep(key_delay_in_s)
+            charge_pressed = 0
+
+        PressKey(SHIFT)
+        time.sleep(key_delay_in_s)
+        ReleaseKey(SHIFT)
+        time.sleep(key_delay_in_s)
 
 def load_new_templates():
     global template_number, charge, punch, slam, uppercut, button_state, sample_index
@@ -249,7 +282,7 @@ def load_new_templates():
 def plotting():
     figure1, axs1 = plt.subplots(nrows=3, ncols=5, figsize=(12,8))
     cols = ['{}'.format(col) for col in ['Last Data','Charge','Punch','Slam','Uppercut']]
-    rows = ['{} [m/s^2]'.format(row) for row in ['X', 'Y', 'Z']]
+    rows = ['{}'.format(row) for row in ['X', 'Y', 'Z']]
 
     for ax, col in zip(axs1[0], cols):
         ax.set_title(col)
@@ -342,7 +375,14 @@ while(1):
             break
 
         else: # -------------- GAME TIME MODE----------------------------#
-            compare()   # compare the input signal with prerecorded gestures and returns the result
+            compare()   # compare the input signal with prerecorded gestures
+            keyboard_input() # 
+
+            # zero out the sample index
+            sample_index = 0
+
+            # zero out the button_state
+            button_state = 0
             
 ser.close()
 plt.show()
