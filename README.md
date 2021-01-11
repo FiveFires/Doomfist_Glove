@@ -1,5 +1,5 @@
 # Doomfist_Glove
-A custom controller for the PC game Overwatch for character Doomfist.
+A custom controller for the PC game Overwatch for the character Doomfist.
 
 Controller is based on arduino nano with MPU6050 sensor and a button. All of them are glued to a glove.  
 Sensor data is being sent to PC, where it is processed in a python script, which then sends an input to the game.
