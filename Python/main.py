@@ -23,7 +23,7 @@ gyroscope_z_offset = -85
 
 # data comms variables
 baud_rate = 115200
-buffer_length = 75
+buffer_length = 50
 number_of_bytes = 7
 button_state = 0
 
@@ -31,7 +31,7 @@ button_state = 0
 A = np.zeros((buffer_length,3))
 
 # data array for past samples
-memory_buffer = np.zeros((int(buffer_length/3),3))
+memory_buffer = np.zeros((int(buffer_length/5),3))
 memory_index = 0
 sample_index = 0
 
@@ -242,9 +242,11 @@ def compare():
     punch_error = sum(abs(punch[:,0] - A[:,0])) + sum(abs(punch[:,1] - A[:,1])) + sum(abs(punch[:,2] - A[:,2]))
     slam_error = sum(abs(slam[:,0] - A[:,0])) + sum(abs(slam[:,1] - A[:,1])) + sum(abs(slam[:,2] - A[:,2]))
     uppercut_error = sum(abs(uppercut[:,0] - A[:,0])) + sum(abs(uppercut[:,1] - A[:,1])) + sum(abs(uppercut[:,2] - A[:,2]))
-    slap_error = sum(abs(slap[:,0] - A[:,0])) + sum(abs(slap[:,1] - A[:,1])) + sum(abs(slap[:,2] - A[:,2]))
+    #slap_error = sum(abs(slap[:,0] - A[:,0])) + sum(abs(slap[:,1] - A[:,1])) + sum(abs(slap[:,2] - A[:,2]))
 
-    ability_index = np.argmin([charge_error, punch_error, slam_error, uppercut_error, slap_error])
+    #ability_index = np.argmin([charge_error, punch_error, slam_error, uppercut_error, slap_error])
+
+    ability_index = np.argmin([charge_error, punch_error, slam_error, uppercut_error])
 
     if ability_index == 0:
         ability = "CHARGE"
@@ -500,7 +502,7 @@ while(1): # ------- MAIN LOOP ------- #
                 charge = np.loadtxt('Charge.txt')
                 slam = np.loadtxt('Slam.txt')
                 uppercut = np.loadtxt('Uppercut.txt')
-                slap = np.loadtxt('Slap.txt')
+                #slap = np.loadtxt('Slap.txt')
                 plotting()
                 break
 
