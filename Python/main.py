@@ -3,8 +3,9 @@ import matplotlib.pyplot as plt
 import serial
 import time
 import timeit
-from scipy import signal
-from directkeys import PressKey, ReleaseKey, E, SHIFT, L
+from scipy import signal, fft
+from threading import Timer, Lock
+from directkeys import PressKey, ReleaseKey, E, SHIFT, L, V
 #----------------------------------------------------------------------------------------------------------------------------------
 # VARIABLES INIT
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -15,22 +16,22 @@ sample_rate = 1000
 accelerometer_scale = 16
 gyroscope_scale = 1000
 
-# Might need later
+# might need later
 gyroscope_x_offset = 48
 gyroscope_y_offset = -52
 gyroscope_z_offset = -85
 
 # data comms variables
 baud_rate = 115200
-buffer_length = 150
+buffer_length = 75
 number_of_bytes = 7
 button_state = 0
 
 # accelerometer array
 A = np.zeros((buffer_length,3))
 
-# data array for past samples, fifth of data to be compared
-memory_buffer = np.zeros((int(buffer_length/5),3))
+# data array for past samples
+memory_buffer = np.zeros((int(buffer_length/3),3))
 memory_index = 0
 sample_index = 0
 
@@ -38,32 +39,58 @@ sample_index = 0
 from_ADC_g_to_metres = accelerometer_scale*9.81/32768
 from_ADc_deg_to_deg = gyroscope_scale/32768
 dt = 1/sample_rate
+
+def release_charge_key_after_delay():
+
+    global charge_pressed
+    # timer function that gets called 3 sec after doing the charge ability
+    if(charge_pressed == 1):
+        ReleaseKey(L)
+        print("CHARGE RELEASED")
+        charge_pressed = 0
+
+class RepeatableTimer(object):
+    def __init__(self, interval, function, args=[], kwargs={}):
+        self._interval = interval
+        self._function = function
+        self._args = args
+        self._kwargs = kwargs
+    def start(self):
+        t = Timer(self._interval, self._function, *self._args, **self._kwargs)
+        t.start()
+
+# keyboard input variables
 key_delay_in_s = 0.01 # delay between key press and key release
-charge_pressed = 0
+charge_pressed = 0 # indicator if the charge has been pressed or not
+charge_timer = RepeatableTimer(3,release_charge_key_after_delay)
 
 #----------------------------------------------------------------------------------------------------------------------------------
 # LOADING TEMPLATES
 #----------------------------------------------------------------------------------------------------------------------------------
-template_number = 1
+template_data_number = 0
+template_to_load = 0
+choice = 0
+template_array = np.zeros((buffer_length,3,10))
 punch = np.loadtxt('Punch.txt')
 charge = np.loadtxt('Charge.txt')
 slam = np.loadtxt('Slam.txt')
 uppercut = np.loadtxt('Uppercut.txt')
+slap = np.loadtxt('Slap.txt')
 
 #----------------------------------------------------------------------------------------------------------------------------------
 # FILTER DESIGN
 #----------------------------------------------------------------------------------------------------------------------------------
-highpass_cutoff = 0.1
+highpass_cutoff = 0.001
 lowpass_cutoff = 15
 
-# Highpass filter for offsets like gravity, 0.1 Hz cutoff
+# Highpass filter for offsets like gravity, 0.01 Hz cutoff
 DHPF = signal.butter(1, 2*highpass_cutoff/sample_rate, 'highpass', analog=False, output='ba')
 
-# Lowpass filter for noise elimination, 10 Hz cutoff
+# Lowpass filter for noise elimination, 15 Hz cutoff
 DLPF = signal.butter(1, 2*lowpass_cutoff/sample_rate, 'lowpass', analog=False, output='ba')
 
 # Bandpass filter
-bandpass = signal.butter(1, [2*highpass_cutoff/sample_rate,2*lowpass_cutoff/sample_rate], 'bandpass', analog=False, output='ba')
+bandpass = signal.butter(2, [2*highpass_cutoff/sample_rate,2*lowpass_cutoff/sample_rate], 'bandpass', analog=False, output='ba')
 
 #----------------------------------------------------------------------------------------------------------------------------------
 # FUNCTIONS DEFINITION
@@ -97,7 +124,7 @@ def start_com():
     ser.read(number_of_bytes*3)
 
     ser.reset_input_buffer()
-    print("Comms and Sensors ready, it's SHOWTIME!")
+    print("Comms and Sensors ready")
 
 def ask_for_data():
     # send a char R to arduino to let him know he is READY for data
@@ -154,11 +181,47 @@ def retrieve_memory():
 
 def process_sample_buffer():
     global A, sample_index, button_state
+  
+    #low pass filtering acceleration to remove noise
+    A[:,0] = signal.filtfilt(DLPF[0], DLPF[1], A[:,0]) # x acc filtered
+    A[:,1] = signal.filtfilt(DLPF[0], DLPF[1], A[:,1]) # y acc filtered
+    A[:,2] = signal.filtfilt(DLPF[0], DLPF[1], A[:,2]) # z acc filtered
 
-    # both low and high pass filtering acceleration to remove noise and gravity
-    A[:,0] = signal.filtfilt(bandpass[0], bandpass[1], A[:,0]) # x acc filtered
-    A[:,1] = signal.filtfilt(bandpass[0], bandpass[1], A[:,1]) # y acc filtered
-    A[:,2] = signal.filtfilt(bandpass[0], bandpass[1], A[:,2]) # z acc filtered
+
+    # OLD CODE PARTS, MIGHT USE IN THE FUTURE
+    # _,ax = plt.subplots(3,3)
+
+    # A_after_ifft = np.zeros((buffer_length,3))
+    
+    # ax[0,0].plot(np.linspace(0, dt*len(A[:,0]), len(A[:,0])), A[:,0])
+    # ax[1,0].plot(np.linspace(0, dt*len(A[:,1]), len(A[:,1])), A[:,1])
+    # ax[2,0].plot(np.linspace(0, dt*len(A[:,2]), len(A[:,2])), A[:,2])
+
+    # A_after_ifft_x = fft.rfft(A[:,0])
+    # A_after_ifft_y = fft.rfft(A[:,1])
+    # A_after_ifft_z = fft.rfft(A[:,2])
+
+    # A_after_ifft_x[0] = 0
+    # A_after_ifft_y[0] = 0
+    # A_after_ifft_z[0] = 0
+
+    # A_after_ifft[:,0] = fft.irfft(A_after_ifft_x)
+    # A_after_ifft[:,1] = fft.irfft(A_after_ifft_y)
+    # A_after_ifft[:,2] = fft.irfft(A_after_ifft_z)
+    
+    # ax[0,1].plot(np.linspace(0, dt*len(A_after_ifft[:,0]), len(A_after_ifft[:,0])), A_after_ifft[:,0])
+    # ax[1,1].plot(np.linspace(0, dt*len(A_after_ifft[:,1]), len(A_after_ifft[:,1])), A_after_ifft[:,1])
+    # ax[2,1].plot(np.linspace(0, dt*len(A_after_ifft[:,2]), len(A_after_ifft[:,2])), A_after_ifft[:,2])
+
+    # Bx = signal.filtfilt(DLPF[0], DLPF[1], A[:,0])le
+    # By = signal.filtfilt(DLPF[0], DLPF[1], A[:,1])
+    # Bz = signal.filtfilt(DLPF[0], DLPF[1], A[:,2])
+
+    # ax[0,2].plot(np.linspace(0, dt*len(Bx), len(Bx)), Bx)evv
+    # ax[1,2].plot(np.linspace(0, dt*len(By), len(By)), By)
+    # ax[2,2].plot(np.linspace(0, dt*len(Bz), len(Bz)), Bz)
+
+    # plt.show()
 
     # # low pass filtering angular velocities to remove noise
     # G[:,0] = signal.filtfilt(DLPF[0],DLPF[1], G[:,0])
@@ -170,16 +233,6 @@ def process_sample_buffer():
     # angle_y = integrate.cumtrapz(G[:,1], dx=dt) + angle_y[-1]
     # angle_z = integrate.cumtrapz(G[:,2], dx=dt) + angle_z[-1]
 
-    # G_full_x.extend(angle_x)
-    # G_full_y.extend(angle_y)
-    # G_full_z.extend(angle_z)
-
-    
-
-    # A_full_x.extend(A[:,0])
-    # A_full_y.extend(A[:,1])
-    # A_full_z.extend(A[:,2])
-
 def compare():
     global sample_index, button_state, charge_pressed, ability
     # compare the input signal with pre-recorded gestures
@@ -189,99 +242,146 @@ def compare():
     punch_error = sum(abs(punch[:,0] - A[:,0])) + sum(abs(punch[:,1] - A[:,1])) + sum(abs(punch[:,2] - A[:,2]))
     slam_error = sum(abs(slam[:,0] - A[:,0])) + sum(abs(slam[:,1] - A[:,1])) + sum(abs(slam[:,2] - A[:,2]))
     uppercut_error = sum(abs(uppercut[:,0] - A[:,0])) + sum(abs(uppercut[:,1] - A[:,1])) + sum(abs(uppercut[:,2] - A[:,2]))
+    slap_error = sum(abs(slap[:,0] - A[:,0])) + sum(abs(slap[:,1] - A[:,1])) + sum(abs(slap[:,2] - A[:,2]))
 
-    ability = np.argmin([charge_error, punch_error, slam_error, uppercut_error])
+    ability_index = np.argmin([charge_error, punch_error, slam_error, uppercut_error, slap_error])
+
+    if ability_index == 0:
+        ability = "CHARGE"
+    elif ability_index == 1:
+        ability = "PUNCH"
+    elif ability_index == 2:
+        ability = "SLAM"
+    elif ability_index == 3:
+        ability = "UPPERCUT"
+    elif ability_index == 4:
+        ability = "SLAP"
     #print("Charge =", charge_error, "Punch =", punch_error, "Slam =", slam_error, "Uppercut =", uppercut_error)
 
 def keyboard_input():
     global charge_pressed
 
-    if ability == 0:
-        #print("Charge it is")
-
+    if ability == "CHARGE":
         if(charge_pressed == 1):
-            ReleaseKey(L)
-            time.sleep(key_delay_in_s)
             charge_pressed = 0
+            ReleaseKey(L)
 
         PressKey(L)
+        charge_pressed = 1 # indicator to release the key later using a timer if not released
+        charge_timer.start()
         time.sleep(key_delay_in_s)
-        charge_pressed = 1 # indicator to reset the key later
 
-    elif ability == 1:
-        #print("Punch it is")
+    elif ability == "PUNCH":
+        charge_pressed = 0
         ReleaseKey(L)
-        time.sleep(key_delay_in_s)
 
-    elif ability == 2:
-        #print("Slam it is")
+    elif ability == "SLAM":
 
         if(charge_pressed == 1):
             ReleaseKey(L)
-            time.sleep(key_delay_in_s)
             charge_pressed = 0
 
         PressKey(E)
         time.sleep(key_delay_in_s)
         ReleaseKey(E)
-        time.sleep(key_delay_in_s)
-        
-    elif ability == 3:
-        #print("Uppercut it is")
+
+    elif ability == "UPPERCUT":
 
         if(charge_pressed == 1):
             ReleaseKey(L)
-            time.sleep(key_delay_in_s)
             charge_pressed = 0
 
         PressKey(SHIFT)
         time.sleep(key_delay_in_s)
         ReleaseKey(SHIFT)
+
+    elif ability == "SLAP":
+
+        if(charge_pressed == 1):
+            ReleaseKey(L)
+            charge_pressed = 0
+
+        PressKey(V)
         time.sleep(key_delay_in_s)
+        ReleaseKey(V)
+
+    print(ability)
 
 def load_new_templates():
-    global template_number, charge, punch, slam, uppercut, button_state, sample_index
-    # creates new template signals for gestures
+    global template_data_number, charge, punch, slam, uppercut, button_state, sample_index, template_to_load, choice
+    # loads 10 data sets for one GESTURE, calculates an average and saves that average as the new template for the GESTURE
+    # this is done for all GESTURES
 
-    if(template_number == 1):
-        np.savetxt('Charge.txt',A)
-        template_number += 1
-        print("Charge template saved")
-        charge = np.loadtxt('Charge.txt')
-        print("Charge template loaded")
-        sample_index = 0
-        button_state = 0
+    if(template_to_load == "CHARGE"): # CHARGE CALIBRATION ROUTINE
+        print(template_to_load, template_data_number+1)
+        template_array[:,:,template_data_number] = A
+        template_data_number += 1
 
-    elif(template_number == 2):
-        np.savetxt('Punch.txt',A)
-        template_number += 1
-        print("Punch template saved")
-        punch = np.loadtxt('Punch.txt')
-        print(("Punch template loaded"))
-        sample_index = 0
-        button_state = 0
+        if(template_data_number >= 10):
+            template_data_number = 0
+            choice = 1
+            averaged_template = np.sum(template_array,axis=2)/10
+            np.savetxt('Charge.txt',averaged_template)
+            print(template_to_load,"calibration done, sum of standard deviations for X Y Z is:", np.sum(np.std(template_array,axis=2),axis=0))
+            time.sleep(0.5)
 
-    elif(template_number == 3):
-        np.savetxt('Slam.txt',A)
-        template_number += 1
-        print("Slam template saved")
-        slam = np.loadtxt('Slam.txt')
-        print("Slam template loaded")
-        sample_index = 0
-        button_state = 0
+    elif(template_to_load == "PUNCH"):  # PUNCH CALIBRATION ROUTINE
+        print(template_to_load, template_data_number+1)
+        template_array[:,:,template_data_number] = A
+        template_data_number += 1
 
-    elif(template_number == 4):
-        np.savetxt('Uppercut.txt',A)
-        template_number = 5
-        print("Uppercut template saved")
-        uppercut = np.loadtxt('Uppercut.txt')
-        print("Uppercut template loaded")
-        sample_index = 0
-        button_state = 0
+        if(template_data_number >= 10):
+            template_data_number = 0
+            choice = 1
+            averaged_template = np.sum(template_array,axis=2)/10
+            np.savetxt('Punch.txt',averaged_template)
+            print(template_to_load,"calibration done, sum of standard deviations for X Y Z is:", np.sum(np.std(template_array,axis=2),axis=0))
+            time.sleep(0.5)
+
+
+    elif(template_to_load == "SLAM"): # SLAM CALIBRATION ROUTINE
+        print(template_to_load, template_data_number+1)
+        template_array[:,:,template_data_number] = A
+        template_data_number += 1
+
+        if(template_data_number >= 10):
+            template_data_number = 0
+            choice = 1
+            averaged_template = np.sum(template_array,axis=2)/10
+            np.savetxt('Slam.txt',averaged_template)
+            print(template_to_load,"calibration done, sum of standard deviations for X Y Z is:", np.sum(np.std(template_array,axis=2),axis=0))
+            time.sleep(0.5)
+
+    elif(template_to_load == "UPPERCUT"): # UPPERCUT CALIBRATION ROUTINE
+        print(template_to_load, template_data_number+1)
+        template_array[:,:,template_data_number] = A
+        template_data_number += 1
+
+        if(template_data_number >= 10):
+            template_data_number = 0
+            choice = 1
+            averaged_template = np.sum(template_array,axis=2)/10
+            np.savetxt('Uppercut.txt',averaged_template)
+            print(template_to_load,"calibration done, sum of standard deviations for X Y Z is:", np.sum(np.std(template_array,axis=2),axis=0))
+            time.sleep(0.5)
+
+    elif(template_to_load == "SLAP"): # SLAM CALIBRATION ROUTINE
+        print(template_to_load, template_data_number+1)
+        template_array[:,:,template_data_number] = A
+        template_data_number += 1
+
+        if(template_data_number >= 10):
+            template_data_number = 0
+            choice = 1
+            averaged_template = np.sum(template_array,axis=2)/10
+            np.savetxt('Slap.txt',averaged_template)
+            print(template_to_load,"calibration done, sum of standard deviations for X Y Z is:", np.sum(np.std(template_array,axis=2),axis=0))
+            time.sleep(0.5)
 
 def plotting():
-    figure1, axs1 = plt.subplots(nrows=3, ncols=5, figsize=(12,8))
-    cols = ['{}'.format(col) for col in ['Last Data','Charge','Punch','Slam','Uppercut']]
+    
+    _, axs1 = plt.subplots(nrows=3, ncols=5, figsize=(12,8))
+    cols = ['{}'.format(col) for col in ['Last move','Charge','Punch','Slam','Uppercut']]
     rows = ['{}'.format(row) for row in ['X', 'Y', 'Z']]
 
     for ax, col in zip(axs1[0], cols):
@@ -290,7 +390,7 @@ def plotting():
     for ax, row in zip(axs1[:,0], rows):
         ax.set_ylabel(row, rotation=0, size='large')
 
-    figure1.tight_layout()
+    #figure1.tight_layout()
 
     # last data plot
     axs1[0,0].plot(np.linspace(0, dt*len(A[:,0]), len(A[:,0])), A[:,0])
@@ -321,13 +421,31 @@ def plotting():
 # PROGRAM START
 #----------------------------------------------------------------------------------------------------------------------------------
 
-# choose a mode
-mode = int(input("||| GAME TIME | NEW TEMPLATES | JUST GRAPHS ||| <--- ENTER ---> [ 0 | 1 | 2 ]: "))
+# CHOOSE A MODE
+mode = int(input("||| GAME TIME | TEMPLATE CALIBRATION | JUST GRAPHS ||| <--- ENTER ---> [ 0 | 1 | 2 ]: "))
 
 #start serial comms
-start_com()
-
 while(1):
+    try:
+        start_com()
+    except:
+        print("Device not connected, please connect the device")
+        time.sleep(5)
+    else:
+        break
+
+if(mode == 0):
+    print("IT'S PUNCH-TIME!")
+
+elif(mode == 1):
+    choice = 1
+    print("Press a button to start the template calibration routine")
+    
+elif(mode == 2):
+    print("Do any gesture to show graphs")
+
+while(1): # ------- MAIN LOOP ------- #
+
     # ask arduino for another sample
     ask_for_data()
 
@@ -340,49 +458,69 @@ while(1):
     # save into memory buffer
     save_to_memory_buffer()
 
-    # if button pressed, retrieve memory
-    if (button_state == 1):
+    if (button_state == 1): # ------- MEMORY RETRIEVAL AFTER BUTTON PRESS ------- #
 
         # grab the past samples
         retrieve_memory()
 
         sample_index = len(memory_buffer)
 
-        while(sample_index < buffer_length):
-            # read rest of samples of data, save it into A
+        while(sample_index < buffer_length): # ------- LOOP FOR READING THE LIVE GESTURE SAMPLES ------- #
+
+            # ask arduino for another sample
             ask_for_data()
 
-            # read the sample byte
+            # read samples of data, save it into A[] matrix
             read_data(sample_index)
             
-            # process each sample
+            # process each sample to speed things up
             process_sample(sample_index)
             
             sample_index += 1
 
-        # filter the whole buffer
+        # filter the whole buffer using butterworth bandpass filter
         process_sample_buffer()
 
-        if(mode == 1): # -------------- NEW TEMPLATES MODE----------------------------#
-            if (template_number == 5): # break the loop after the last template is saved
+        # -------------- MODE BEHAVIOUR BELOW---------------------------- #
+        
+        # -------------- NEW TEMPLATES MODE---------------------------- #
+        if(mode == 1):
+            if(choice == 1):
+                template_to_load = input("Choose which template do you want to calibrate:| CHARGE | PUNCH | SLAM | UPPERCUT | SLAP | or EXIT: ")
+                choice = 0
+                if(template_to_load != "EXIT"):
+                    print("Do 10 times", template_to_load)
+                else:
+                    print("Shutting down...")
+            else:
+                load_new_templates()
+
+            if (template_to_load == "EXIT"):
+                punch = np.loadtxt('Punch.txt')
+                charge = np.loadtxt('Charge.txt')
+                slam = np.loadtxt('Slam.txt')
+                uppercut = np.loadtxt('Uppercut.txt')
+                slap = np.loadtxt('Slap.txt')
                 plotting()
                 break
 
-            load_new_templates()
 
-        elif(mode == 2): # -------------- JUST GRAPHS MODE----------------------------#
+         # -------------- JUST GRAPHS MODE---------------------------- #
+        elif(mode == 2):
             plotting() # plot the graphs
             break
 
-        else: # -------------- GAME TIME MODE----------------------------#
+         # -------------- GAME TIME MODE---------------------------- #
+        else:
             compare()   # compare the input signal with prerecorded gestures
             keyboard_input() # 
 
-            # zero out the sample index
-            sample_index = 0
+        # zero out the sample index
+        sample_index = 0
 
-            # zero out the button_state
-            button_state = 0
+        # zero out the button_state
+        button_state = 0
             
 ser.close()
+time.sleep(2)
 plt.show()

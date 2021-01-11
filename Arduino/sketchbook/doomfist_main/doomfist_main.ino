@@ -108,6 +108,12 @@ void loop()
       if(button_state == 0)
       {
         Serial.write(0x01); // send Click = 1
+        while(1)
+        {
+          // wait for button release
+          button_state = digitalRead(4);
+          if(button_state == 1){break;}        
+        } 
       }
       else
       {
